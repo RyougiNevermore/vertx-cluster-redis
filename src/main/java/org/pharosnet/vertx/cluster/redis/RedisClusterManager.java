@@ -13,13 +13,17 @@ import io.vertx.core.spi.cluster.AsyncMultiMap;
 import io.vertx.core.spi.cluster.ClusterManager;
 import io.vertx.core.spi.cluster.NodeListener;
 import io.vertx.redis.client.Redis;
+import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.RedisOptions;
 import org.pharosnet.vertx.cluster.redis.impl.RedisAsyncMap;
 import org.pharosnet.vertx.cluster.redis.impl.RedisAsyncMultiMap;
 import org.pharosnet.vertx.cluster.redis.impl.RedisHMap;
+import org.pharosnet.vertx.cluster.redis.impl.RedisLock;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -32,9 +36,13 @@ public class RedisClusterManager implements ClusterManager {
 
     private static final String SYNC_MAP_PREFIX = "__vertx.sync.map";
 
+    private static final String LOCK_PREFIX = "__vertx.sync.lock.";
+
+
     private String id;
     private boolean active;
     private Redis redis;
+    private RedisAPI api;
     private RedisOptions options;
     private Vertx vertx;
 
@@ -62,6 +70,7 @@ public class RedisClusterManager implements ClusterManager {
                     return;
                 }
                 this.redis = r.result();
+                this.api = RedisAPI.api(redis);
                 bf.complete();
             });
         }, br -> {
@@ -114,7 +123,14 @@ public class RedisClusterManager implements ClusterManager {
 
     @Override
     public void getLockWithTimeout(String name, long timeout, Handler<AsyncResult<Lock>> handler) {
-
+        name = Optional.ofNullable(name).orElse("").strip();
+        if (name.length() == 0) {
+            handler.handle(Future.failedFuture("bad name"));
+            return;
+        }
+        name = LOCK_PREFIX + name;
+        RedisLock lock = new RedisLock(name, api, timeout);
+        lock.lock(handler);
     }
 
     @Override
@@ -145,6 +161,7 @@ public class RedisClusterManager implements ClusterManager {
     @Override
     public void leave(Handler<AsyncResult<Void>> handler) {
 
+        // this.active = false
     }
 
     @Override

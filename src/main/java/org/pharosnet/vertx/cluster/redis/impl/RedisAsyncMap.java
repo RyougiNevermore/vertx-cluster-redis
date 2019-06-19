@@ -19,15 +19,15 @@ public class RedisAsyncMap<K, V> extends RedisHMap<K, V> implements AsyncMap<K, 
 
     private static final Logger log = LoggerFactory.getLogger(RedisAsyncMap.class);
 
-
-    private static final String map_key_map_key_prefix = "_io.vertx.async.map.key_";
-
-
-    public RedisAsyncMap(Redis redis) {
-        this.redis = redis;
+    public RedisAsyncMap(Redis redis, String name) {
+        this.api = RedisAPI.api(redis);
+        this.name = name;
+        this.map_key_map_key_prefix = String.format("_io.vertx.async.map.%s.key_", name);
     }
 
-    private Redis redis;
+    private String name;
+    private String map_key_map_key_prefix;
+
     private RedisAPI api;
 
     @Override

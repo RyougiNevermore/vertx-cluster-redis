@@ -23,14 +23,14 @@ public class RedisAsyncMultiMap<K, V> extends RedisHMap<K, V> implements AsyncMu
 
     private static final Logger log = LoggerFactory.getLogger(RedisAsyncMultiMap.class);
 
-    private static final String multi_map_key_map_key_prefix = "_io.vertx.async.multi.map.key_";
-
-
-    public RedisAsyncMultiMap(Redis redis) {
-        this.redis = redis;
+    public RedisAsyncMultiMap(Redis redis, String name) {
+        this.name = name;
+        this.api = RedisAPI.api(redis);
+        multi_map_key_map_key_prefix = String.format("_io.vertx.async.multi.map.%s.key_", name);
     }
 
-    private Redis redis;
+    private String name;
+    private String multi_map_key_map_key_prefix;
     private RedisAPI api;
 
     @Override

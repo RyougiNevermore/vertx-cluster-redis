@@ -1,13 +1,70 @@
 package org.pharosnet.vertx.cluster.redis.impl;
 
+import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.LoggerFactory;
+import io.vertx.core.net.SocketAddress;
 import io.vertx.core.shareddata.impl.ClusterSerializable;
+import io.vertx.redis.client.RedisClientType;
+import io.vertx.redis.client.RedisOptions;
+import org.redisson.Redisson;
+import org.redisson.RedissonMapEntry;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.ClusterServersConfig;
+import org.redisson.config.Config;
+import org.redisson.config.SentinelServersConfig;
 
 import java.io.*;
 import java.lang.reflect.Constructor;
 import java.nio.charset.Charset;
+import java.util.*;
 
-public class RedisHMap<K, V> {
+public class RedisHMap<K, V> implements Map<K, V> {
+
+    private static final Logger log = LoggerFactory.getLogger(RedisHMap.class);
+
+    public RedisHMap() {
+    }
+
+    public RedisHMap(RedisOptions options, String name) {
+        Config config = new Config();
+        if (options.getType().equals(RedisClientType.STANDALONE)) {
+            String host = options.getEndpoint().host();
+            int port = options.getEndpoint().port();
+            config.useSingleServer()
+                    .setAddress(String.format("%s:%d", host, port))
+                    .setDatabase(options.getSelect())
+                    .setPassword(options.getPassword());
+        } else if (options.getType().equals(RedisClientType.SENTINEL)) {
+            SentinelServersConfig sentinelConfig = config.useSentinelServers()
+                    .setDatabase(options.getSelect())
+                    .setMasterName(options.getMasterName())
+                    .setPassword(options.getPassword());
+            List<SocketAddress> endpoints = options.getEndpoints();
+            for (SocketAddress address : endpoints) {
+                String host = address.host();
+                int port = address.port();
+                sentinelConfig.addSentinelAddress(String.format("%s:%d", host, port));
+            }
+        } else if (options.getType().equals(RedisClientType.CLUSTER)) {
+            ClusterServersConfig clusterServersConfig = config.useClusterServers()
+                    .setPassword(options.getPassword())
+                    .setScanInterval(2000);
+            List<SocketAddress> endpoints = options.getEndpoints();
+            for (SocketAddress address : endpoints) {
+                String host = address.host();
+                int port = address.port();
+                clusterServersConfig.addNodeAddress(String.format("redis://%s:%d", host, port));
+            }
+        }
+        this.redisson = Redisson.create(config);
+        this.name = name;
+    }
+
+    private Vertx vertx;
+    private RedissonClient redisson;
+    private String name;
 
     String asString(Object object) throws IOException {
         return new String(asByte(object), Charset.forName("UTF-8"));
@@ -66,6 +123,122 @@ public class RedisHMap<K, V> {
             ObjectInputStream objectIn = new ObjectInputStream(new ByteArrayInputStream(body));
             return (T) objectIn.readObject();
         }
+    }
+
+    @Override
+    public int size() {
+        return redisson.getMap(name).size();
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return this.size() == 0;
+    }
+
+    @Override
+    public boolean containsKey(Object key) {
+        return redisson.getMap(name).containsKey(key);
+    }
+
+    @Override
+    public boolean containsValue(Object value) {
+        return redisson.getMap(name).containsValue(value);
+    }
+
+    @Override
+    public V get(Object key) {
+        V v = null;
+        try {
+            Object value = redisson.getMap(name).get(key);
+            v = asObject(value.toString().getBytes(Charset.forName("UTF-8")));
+        } catch (Exception e) {
+            log.error("sync map get {} failed", e, key);
+        }
+        return v;
+    }
+
+    @Override
+    public V put(K key, V value) {
+        String k = null;
+        String v = null;
+        try {
+            k = asString(key);
+            v = asString(value);
+        } catch (Exception e) {
+            log.error("sync map put {} {} failed", e, key, value);
+        }
+        redisson.getMap(name).put(k, v);
+        return value;
+    }
+
+    @Override
+    public V remove(Object key) {
+        V v = this.get(key);
+        redisson.getMap(name).remove(key);
+        return v;
+    }
+
+    @Override
+    public void putAll(Map<? extends K, ? extends V> m) {
+        redisson.getMap(name).putAll(m);
+    }
+
+    @Override
+    public void clear() {
+        redisson.getMap(name).clear();
+    }
+
+    @Override
+    public Set<K> keySet() {
+        Set<K> ks = new HashSet<>();
+
+        Set<Object> set = redisson.getMap(name).keySet();
+        for (Object key : set) {
+            try {
+                K k = asObject(key.toString().getBytes(Charset.forName("UTF-8")));
+                ks.add(k);
+            } catch (Exception e) {
+                log.error("sync map keySet {} failed", e, key);
+            }
+        }
+        return ks;
+    }
+
+    @Override
+    public Collection<V> values() {
+        List<V> vs = new ArrayList<>();
+
+        Collection<Object> values = redisson.getMap(name).values();
+
+        for (Object value : values) {
+            try {
+                V v = asObject(value.toString().getBytes(Charset.forName("UTF-8")));
+                vs.add(v);
+            } catch (Exception e) {
+                log.error("sync map values {} failed", e, value);
+            }
+        }
+        return vs;
+    }
+
+    @Override
+    public Set<Entry<K, V>> entrySet() {
+        Set<Entry<K, V>> set = new HashSet<>();
+        Set<Entry<Object, Object>> entries = redisson.getMap(name).entrySet();
+        for (Entry<Object, Object> entry : entries) {
+            Object key = entry.getKey();
+            Object value = entry.getValue();
+
+            try {
+                K k = asObject(key.toString().getBytes(Charset.forName("UTF-8")));
+                V v = asObject(value.toString().getBytes(Charset.forName("UTF-8")));
+
+                set.add(new RedissonMapEntry<K, V>(k, v));
+            } catch (Exception e) {
+                log.error("sync map entrySet {} {} failed", e, key, value);
+            }
+        }
+        return set;
     }
 
 }

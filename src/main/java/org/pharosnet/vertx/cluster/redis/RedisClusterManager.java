@@ -28,8 +28,6 @@ public class RedisClusterManager implements ClusterManager {
 
     private static final Logger log = LoggerFactory.getLogger(RedisClusterManager.class);
 
-    private static final String LOCK_SEMAPHORE_PREFIX = "__vertx.";
-    private static final String NODE_ID_ATTRIBUTE = "__vertx.nodeId";
 
     private static final String SYNC_MAP_PREFIX = "__vertx.sync.map";
 
@@ -51,7 +49,7 @@ public class RedisClusterManager implements ClusterManager {
 
     private RedisHMap<String, String> nodes;
 
-    public RedisClusterManager(Vertx vertx, RedisOptions options) {
+    public RedisClusterManager(RedisOptions options) {
         this.id = UUID.randomUUID().toString();
         this.options = options;
         this.asyncMaps = new ConcurrentHashMap<>();
@@ -62,25 +60,6 @@ public class RedisClusterManager implements ClusterManager {
     @Override
     public void setVertx(Vertx vertx) {
         this.vertx = vertx;
-        vertx.executeBlocking(bf -> {
-            Redis.createClient(vertx, options).connect(r -> {
-                if (r.failed()) {
-                    bf.fail(r.cause());
-                    return;
-                }
-                this.redis = r.result();
-                this.api = RedisAPI.api(redis);
-                this.nodes = new RedisHMap<>(this.options, "__vertx.nodes");
-
-                bf.complete();
-            });
-        }, br -> {
-            if (br.failed()) {
-                this.active = false;
-                throw new RuntimeException("connect to redis server failed", br.cause());
-            }
-            this.active = true;
-        });
     }
 
     @SuppressWarnings("unchecked")
@@ -91,7 +70,7 @@ public class RedisClusterManager implements ClusterManager {
             map = new RedisAsyncMultiMap<>(this.redis, name);
             this.asyncMultiMaps.put(name, map);
         } else {
-           map = this.asyncMultiMaps.get(name);
+            map = this.asyncMultiMaps.get(name);
         }
         handler.handle(Future.succeededFuture(map));
     }
@@ -113,11 +92,11 @@ public class RedisClusterManager implements ClusterManager {
     @Override
     public <K, V> Map<K, V> getSyncMap(String name) {
         RedisHMap<K, V> map;
-        if (!this.syncMaps.containsKey(name)) {
-            map = new RedisHMap<>(this.options, name);
-            this.syncMaps.put(name, map);
+        if (!this.syncMaps.containsKey(SYNC_MAP_PREFIX + name)) {
+            map = new RedisHMap<>(this.options, SYNC_MAP_PREFIX + name);
+            this.syncMaps.put(SYNC_MAP_PREFIX + name, map);
         } else {
-            map = this.syncMaps.get(name);
+            map = this.syncMaps.get(SYNC_MAP_PREFIX + name);
         }
         return map;
     }
@@ -160,13 +139,36 @@ public class RedisClusterManager implements ClusterManager {
         if (!this.active) {
             this.active = true;
         }
-        this.nodes.put(this.id, Instant.now().toString());
+        vertx.executeBlocking(bf -> {
+            Redis.createClient(vertx, options).connect(r -> {
+                if (r.failed()) {
+                    bf.fail(r.cause());
+                    return;
+                }
+                this.redis = r.result();
+                this.api = RedisAPI.api(redis);
+                this.nodes = new RedisHMap<>(this.options, "__vertx.nodes");
+                if (log.isDebugEnabled()) {
+                    log.debug("cluster {}", this.nodes);
+                }
+                bf.complete();
+            });
+        }, br -> {
+            if (br.failed()) {
+                this.active = false;
+                handler.handle(Future.failedFuture(br.cause()));
+            }
+            this.active = true;
+            this.nodes.put(this.id, Instant.now().toString());
+            handler.handle(Future.succeededFuture());
+        });
     }
 
     @Override
     public void leave(Handler<AsyncResult<Void>> handler) {
-         this.active = false;
-         this.nodes.remove(this.id);
+        this.active = false;
+        this.nodes.remove(this.id);
+        handler.handle(Future.succeededFuture());
     }
 
     @Override

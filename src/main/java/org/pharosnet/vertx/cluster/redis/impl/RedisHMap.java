@@ -250,4 +250,14 @@ public class RedisHMap<K, V> implements Map<K, V> {
         return set;
     }
 
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        Set<Entry<K, V>> set = this.entrySet();
+        for (Entry<K,V> e : set) {
+            sb.append(e.getKey()).append(":").append(e.getValue()).append("\n");
+        }
+        return sb.toString();
+    }
+
 }

@@ -238,7 +238,7 @@ public class RedisAsyncMultiMap<K, V> extends RedisHMap<K, V> implements AsyncMu
             for (int i = 0; i < size; i++) {
                 String key = kr.result().get(i).toString(Charset.forName("UTF-8"));
                 api.llen(key, lr -> {
-                    Future<KeyValue<V>> future = Future.future();
+                    Future<KeyValue<String, V>> future = Future.future();
                     futures.add(future);
                     if (lr.failed()) {
                         future.fail(lr.cause());
@@ -291,10 +291,10 @@ public class RedisAsyncMultiMap<K, V> extends RedisHMap<K, V> implements AsyncMu
                     return;
                 }
 
-                List<KeyValue<V>> keyValues = r.result().list();
+                List<KeyValue<String, V>> keyValues = r.result().list();
                 // TODO LREM WITH COMPOSITE
                 List<Future> remFutures = new ArrayList<>();
-                for (KeyValue keyValue : keyValues) {
+                for (KeyValue<String, V> keyValue : keyValues) {
                     if (keyValue.isEmpty()) {
                         continue;
                     }

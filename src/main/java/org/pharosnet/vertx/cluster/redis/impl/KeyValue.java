@@ -1,23 +1,23 @@
 package org.pharosnet.vertx.cluster.redis.impl;
 
-public class KeyValue<V> {
+public class KeyValue<K, V> {
 
     public KeyValue() {
     }
 
-    public KeyValue(String key, V value) {
+    public KeyValue(K key, V value) {
         this.key = key;
         this.value = value;
     }
 
-    private String key;
+    private K key;
     private V value;
 
-    public String getKey() {
+    public K getKey() {
         return key;
     }
 
-    public void setKey(String key) {
+    public void setKey(K key) {
         this.key = key;
     }
 

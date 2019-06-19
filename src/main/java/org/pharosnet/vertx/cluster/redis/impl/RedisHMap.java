@@ -204,6 +204,15 @@ public class RedisHMap<K, V> implements Map<K, V> {
         return ks;
     }
 
+    public List<K> keys() {
+        List<K> ks = new ArrayList<>();
+        Set<K> keys = this.keySet();
+        for (K k : keys) {
+            ks.add(k);
+        }
+        return ks;
+    }
+
     @Override
     public Collection<V> values() {
         List<V> vs = new ArrayList<>();

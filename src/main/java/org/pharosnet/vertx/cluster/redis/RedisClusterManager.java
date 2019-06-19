@@ -15,10 +15,7 @@ import io.vertx.core.spi.cluster.NodeListener;
 import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.RedisOptions;
-import org.pharosnet.vertx.cluster.redis.impl.RedisAsyncMap;
-import org.pharosnet.vertx.cluster.redis.impl.RedisAsyncMultiMap;
-import org.pharosnet.vertx.cluster.redis.impl.RedisHMap;
-import org.pharosnet.vertx.cluster.redis.impl.RedisLock;
+import org.pharosnet.vertx.cluster.redis.impl.*;
 
 import java.time.Instant;
 import java.util.List;
@@ -45,12 +42,14 @@ public class RedisClusterManager implements ClusterManager {
     private RedisAPI api;
     private RedisOptions options;
     private Vertx vertx;
+    private NodeListener nodeListener;
 
     private Map<String, AsyncMultiMap> asyncMultiMaps;
     private Map<String, AsyncMap> asyncMaps;
     private Map<String, RedisHMap> syncMaps;
 
 
+    private RedisHMap<String, String> nodes;
 
     public RedisClusterManager(Vertx vertx, RedisOptions options) {
         this.id = UUID.randomUUID().toString();
@@ -71,6 +70,8 @@ public class RedisClusterManager implements ClusterManager {
                 }
                 this.redis = r.result();
                 this.api = RedisAPI.api(redis);
+                this.nodes = new RedisHMap<>(this.options, "__vertx.nodes");
+
                 bf.complete();
             });
         }, br -> {
@@ -135,7 +136,8 @@ public class RedisClusterManager implements ClusterManager {
 
     @Override
     public void getCounter(String name, Handler<AsyncResult<Counter>> handler) {
-
+        RedisCounter counter = new RedisCounter(name, api);
+        handler.handle(Future.succeededFuture(counter));
     }
 
     @Override
@@ -145,23 +147,26 @@ public class RedisClusterManager implements ClusterManager {
 
     @Override
     public List<String> getNodes() {
-        return null;
+        return this.nodes.keys();
     }
 
     @Override
     public void nodeListener(NodeListener listener) {
-
+        this.nodeListener = listener;
     }
 
     @Override
     public void join(Handler<AsyncResult<Void>> handler) {
-
+        if (!this.active) {
+            this.active = true;
+        }
+        this.nodes.put(this.id, Instant.now().toString());
     }
 
     @Override
     public void leave(Handler<AsyncResult<Void>> handler) {
-
-        // this.active = false
+         this.active = false;
+         this.nodes.remove(this.id);
     }
 
     @Override
